@@ -8,6 +8,7 @@
    - **Visual Feedback:** Always inject the floating Devin HUD badge and neon element highlight boxes.
    - **No Blindness:** NEVER click generic tags (`button.first.click()`) or blind coordinates. Always verify text and visibility before clicking.
    - **No Doom Loops:** Enforce the 3-strike circuit breaker. If stuck on a CAPTCHA, 2FA, or roadblock, pause, chime, and ask the user.
+   - **Automatic Subagent Delegation:** For non-trivial, multi-step, downloading, or scraping tasks, the Lead Agent MUST automatically delegate the browser execution to a worker subagent (`invoke_subagent` with `TypeName: 'self'`, `Role: 'Devin Browser Worker'`). This keeps the main chat clean, lightning-fast, and 100% hallucination-free!
 
 ---
 
@@ -530,6 +531,39 @@ def extract_interactive_elements(page):
             }))
     """)
 ```
+
+---
+
+## 🤝 AUTOMATIC SUBAGENT DELEGATION (MULTI-AGENT SWARM ARCHITECTURE)
+**MANDATORY FOR LEAD AGENTS:** Never execute long, multi-step browser scraping, file downloading, or multi-site research directly in the primary user conversation.
+
+### Why Subagent Delegation is Mandatory:
+1. **Zero Context Bloat:** All messy terminal logs, Playwright trace outputs, raw DOM trees, and retry loops are contained inside the worker subagent.
+2. **Hallucination Immunity:** The Lead Agent’s conversation stays 100% clean, sharp, and focused on the user's high-level goal.
+3. **Failure Isolation:** If a website blocks or stalls a subagent, the Lead Agent does NOT crash. It can cancel the subagent, spawn a new one, or try an alternative path without freezing the user's chat.
+
+### How the Lead Agent Automatically Delegates:
+Whenever given a non-trivial browsing or downloading task, the Lead Agent MUST call `invoke_subagent`:
+
+```json
+{
+  "Subagents": [
+    {
+      "TypeName": "self",
+      "Role": "Devin Browser Worker",
+      "Prompt": "Execute the following browser automation task using the DEVIN_BROWSER_AGENT.md architecture:\n1. Open Chrome on WinSta0\\Default using the persistent profile.\n2. Navigate to [target URL].\n3. Execute [actions/downloads].\n4. Verify downloaded files are > 0 bytes in %USERPROFILE%\\Downloads.\n5. Report back the final status, file paths, and extracted data to the Lead Agent."
+    }
+  ]
+}
+```
+
+### The 2-Tier Agent Workflow:
+1. **User asks for a task** (e.g. *"Download 3 research papers and summarize them"*).
+2. **Lead Agent plans the task** and immediately launches the **Browser Worker** subagent.
+3. **Browser Worker executes:** Connects to Chrome, glides the mouse, solves Turnstile, handles timers, and captures files.
+4. **Browser Worker reports back** with clean, structured results.
+5. **Lead Agent verifies & presents** the final outcome to the user cleanly.
+
 
 
 
