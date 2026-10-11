@@ -69,7 +69,7 @@ except Exception:
     pass
 
 # ==============================================================================
-# 2. AUTO-DISCOVER CHROME & ALLOCATE DYNAMIC PORT
+# 2. SMART HOT-ATTACH (REUSE OPEN CHROME - ZERO RESTARTS!)
 # ==============================================================================
 import os
 import socket
@@ -85,71 +85,84 @@ def find_chrome():
             return p
     return "chrome.exe"
 
-def find_free_port(start=9222):
-    for p in range(start, start + 20):
+def get_active_or_free_cdp_port(start=9222):
+    import urllib.request
+    # 1. Check if Chrome CDP is already actively running and responding on any port (9222 - 9231)
+    for port in range(start, start + 10):
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=0.25) as r:
+                if r.status == 200:
+                    return port, True
+        except Exception:
+            pass
+    # 2. Find first open free port to launch Chrome on
+    for port in range(start, start + 10):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            if s.connect_ex(('127.0.0.1', p)) != 0:
-                return p
-    return start
+            if s.connect_ex(('127.0.0.1', port)) != 0:
+                return port, False
+    return start, False
 
-cdp_port = find_free_port(9222)
+cdp_port, is_already_running = get_active_or_free_cdp_port(9222)
 chrome_path = find_chrome()
-
-class STARTUPINFOW(ctypes.Structure):
-    _fields_ = [
-        ('cb', wintypes.DWORD),
-        ('lpReserved', wintypes.LPWSTR),
-        ('lpDesktop', wintypes.LPWSTR),
-        ('lpTitle', wintypes.LPWSTR),
-        ('dwX', wintypes.DWORD),
-        ('dwY', wintypes.DWORD),
-        ('dwXSize', wintypes.DWORD),
-        ('dwYSize', wintypes.DWORD),
-        ('dwXCountChars', wintypes.DWORD),
-        ('dwYCountChars', wintypes.DWORD),
-        ('dwFillAttribute', wintypes.DWORD),
-        ('dwFlags', wintypes.DWORD),
-        ('wShowWindow', wintypes.WORD),
-        ('cbReserved2', wintypes.WORD),
-        ('lpReserved2', ctypes.c_void_p),
-        ('hStdInput', wintypes.HANDLE),
-        ('hStdOutput', wintypes.HANDLE),
-        ('hStdError', wintypes.HANDLE),
-    ]
-
-class PROCESS_INFORMATION(ctypes.Structure):
-    _fields_ = [
-        ('hProcess', wintypes.HANDLE),
-        ('hThread', wintypes.HANDLE),
-        ('dwProcessId', wintypes.DWORD),
-        ('dwThreadId', wintypes.DWORD),
-    ]
-
-si = STARTUPINFOW()
-si.cb = ctypes.sizeof(STARTUPINFOW)
-si.lpDesktop = 'WinSta0\\Default'   # Forces window onto visible monitor
-si.dwFlags = 1                       # STARTF_USESHOWWINDOW
-si.wShowWindow = 3                   # SW_SHOWMAXIMIZED
-pi = PROCESS_INFORMATION()
-
-# Persistent user profile (Preserves cookies, logins, and sessions across runs!)
 user_data = os.path.expandvars(r"%LOCALAPPDATA%\DevinBrowserAgent\Profile")
 os.makedirs(user_data, exist_ok=True)
-target_url = "https://www.google.com"
 
-# Stealth flags: removes automation flags so Cloudflare & Datadome don't block the browser
-chrome_cmd = (
-    f'"{chrome_path}" --remote-debugging-port={cdp_port} --user-data-dir="{user_data}" '
-    f'--disable-blink-features=AutomationControlled --no-first-run --no-default-browser-check '
-    f'--start-maximized {target_url}'
-)
+# ONLY launch Chrome if it is NOT already running!
+if not is_already_running:
+    print(f"[COLD-BOOT]: Launching Chrome on dynamically allocated port {cdp_port}...")
+    class STARTUPINFOW(ctypes.Structure):
+        _fields_ = [
+            ('cb', wintypes.DWORD),
+            ('lpReserved', wintypes.LPWSTR),
+            ('lpDesktop', wintypes.LPWSTR),
+            ('lpTitle', wintypes.LPWSTR),
+            ('dwX', wintypes.DWORD),
+            ('dwY', wintypes.DWORD),
+            ('dwXSize', wintypes.DWORD),
+            ('dwYSize', wintypes.DWORD),
+            ('dwXCountChars', wintypes.DWORD),
+            ('dwYCountChars', wintypes.DWORD),
+            ('dwFillAttribute', wintypes.DWORD),
+            ('dwFlags', wintypes.DWORD),
+            ('wShowWindow', wintypes.WORD),
+            ('cbReserved2', wintypes.WORD),
+            ('lpReserved2', ctypes.c_void_p),
+            ('hStdInput', wintypes.HANDLE),
+            ('hStdOutput', wintypes.HANDLE),
+            ('hStdError', wintypes.HANDLE),
+        ]
 
-kernel32.CreateProcessW(None, chrome_cmd, None, None, False, 0, None, None, ctypes.byref(si), ctypes.byref(pi))
-user32.MessageBeep(0) # Audio chime to alert user
-time.sleep(3.0)
+    class PROCESS_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ('hProcess', wintypes.HANDLE),
+            ('hThread', wintypes.HANDLE),
+            ('dwProcessId', wintypes.DWORD),
+            ('dwThreadId', wintypes.DWORD),
+        ]
+
+    si = STARTUPINFOW()
+    si.cb = ctypes.sizeof(STARTUPINFOW)
+    si.lpDesktop = 'WinSta0\\Default'   # Forces window onto visible monitor
+    si.dwFlags = 1                       # STARTF_USESHOWWINDOW
+    si.wShowWindow = 3                   # SW_SHOWMAXIMIZED
+    pi = PROCESS_INFORMATION()
+
+    target_url = "https://www.google.com"
+    chrome_cmd = (
+        f'"{chrome_path}" --remote-debugging-port={cdp_port} --user-data-dir="{user_data}" '
+        f'--disable-blink-features=AutomationControlled --no-first-run --no-default-browser-check '
+        f'--start-maximized {target_url}'
+    )
+
+    kernel32.CreateProcessW(None, chrome_cmd, None, None, False, 0, None, None, ctypes.byref(si), ctypes.byref(pi))
+    user32.MessageBeep(0)
+    time.sleep(2.5)
+else:
+    print(f"[HOT-ATTACH]: Chrome is ALREADY running on port {cdp_port}! Reusing existing window (No restart).")
+
 
 # ==============================================================================
-# 3. HUD BADGE & NEON ELEMENT HIGHLIGHTER
+# 3. HUD BADGE & HUMAN MOUSE GLIDING ENGINE (NEVER CLICK INVISIBLY)
 # ==============================================================================
 def update_hud(page, status_text, highlight_selector=None):
     js = f"""
@@ -176,7 +189,7 @@ def update_hud(page, status_text, highlight_selector=None):
             hud.style.gap = '10px';
             document.body.appendChild(hud);
         }}
-        hud.innerHTML = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e;box-shadow:0 0 10px #22c55e;"></span> 🤖 <strong>AI Agent</strong> | <span style="color:#ffffff;">{status_text}</span>`;
+        hud.innerHTML = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e;box-shadow:0 0 10px #22c55e;"></span> 🤖 <strong>Devin AI Agent</strong> | <span style="color:#ffffff;">{status_text}</span>`;
 
         if ('{highlight_selector or ""}') {{
             let el = document.querySelector('{highlight_selector or ""}');
@@ -192,6 +205,32 @@ def update_hud(page, status_text, highlight_selector=None):
     """
     try: page.evaluate(js)
     except: pass
+
+def human_click(page, locator):
+    """Visibly glides the mouse to the button like a human, removes ad overlays, and clicks."""
+    try: locator.scroll_into_view_if_needed(timeout=3000)
+    except: pass
+    
+    box = locator.bounding_box()
+    if box:
+        target_x = box['x'] + box['width'] / 2
+        target_y = box['y'] + box['height'] / 2
+        # Visibly glide mouse across the screen so Cloudflare sees human movement:
+        page.mouse.move(target_x, target_y, steps=25)
+        time.sleep(0.15)
+        # Kill transparent ad backdrops that intercept clicks:
+        try: page.evaluate("() => document.querySelectorAll('[class*=\"overlay\"], .modal-backdrop').forEach(e => e.remove())")
+        except: pass
+        page.mouse.click(target_x, target_y)
+    else:
+        locator.click(force=True, timeout=3000)
+
+def human_type(page, locator, text):
+    """Glides mouse to the input, clicks, and types with realistic human cadence."""
+    human_click(page, locator)
+    time.sleep(0.2)
+    locator.type(text, delay=45)
+
 
 # ==============================================================================
 # 4. CDP-CONNECTED AUTONOMOUS BROWSING
@@ -279,11 +318,15 @@ launch_on_screen(r'explorer.exe /select,"C:\path\to\file.txt"')
 with page.expect_download() as download_info:
     page.click("button:has-text('Download')")
 download = download_info.value
-download.save_as(r"C:\Users\espacegamers.ma\Downloads\report.csv")
+download_path = os.path.expandvars(r"%USERPROFILE%\Downloads\report.csv")
+download.save_as(download_path)
 ```
 
 ### 3. Open Any File in Its Default Windows Program:
 ```python
+import os
+os.startfile(download_path)
+```
 ---
 
 ## 🛑 ANTI-HALLUCINATION & ANTI-LOOP PROTOCOL (DOOM-LOOP PREVENTION)
