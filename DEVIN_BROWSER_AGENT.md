@@ -208,29 +208,53 @@ def update_hud(page, status_text, highlight_selector=None):
     except: pass
 
 def human_click(page, locator):
-    """Visibly glides the mouse to the button like a human, removes ad overlays, and clicks."""
+    """Visibly moves the REAL PHYSICAL WINDOWS MOUSE ARROW across the screen to the button and clicks."""
+    import pygetwindow as gw
+    import pyautogui
+    
+    pyautogui.FAILSAFE = False
+    
+    # 1. Bring Chrome to absolute foreground
+    chrome_wins = [w for w in gw.getAllWindows() if 'Chrome' in w.title or 'Google' in w.title]
+    if chrome_wins:
+        try:
+            chrome_wins[0].restore()
+            chrome_wins[0].activate()
+        except: pass
+        win_left = chrome_wins[0].left
+        win_top = chrome_wins[0].top
+    else:
+        win_left, win_top = 0, 0
+
     try: locator.scroll_into_view_if_needed(timeout=3000)
     except: pass
     
     box = locator.bounding_box()
     if box:
-        target_x = box['x'] + box['width'] / 2
-        target_y = box['y'] + box['height'] / 2
-        # Visibly glide mouse across the screen so Cloudflare sees human movement:
-        page.mouse.move(target_x, target_y, steps=25)
-        time.sleep(0.15)
-        # Kill transparent ad backdrops that intercept clicks:
+        # Calculate actual physical screen coordinates (accounting for Chrome header)
+        screen_x = int(win_left + box['x'] + (box['width'] / 2))
+        screen_y = int(win_top + 80 + box['y'] + (box['height'] / 2)) # ~80px for Chrome tab/URL bar
+        
+        # GLIDE PHYSICAL WINDOWS MOUSE CURSOR VISIBLY ON YOUR SCREEN:
+        pyautogui.moveTo(screen_x, screen_y, duration=0.8, tween=pyautogui.easeInOutQuad)
+        time.sleep(0.1)
+        
+        # Annihilate transparent ad backdrops
         try: page.evaluate("() => document.querySelectorAll('[class*=\"overlay\"], .modal-backdrop').forEach(e => e.remove())")
         except: pass
-        page.mouse.click(target_x, target_y)
+        
+        # Physical hardware click:
+        pyautogui.click(screen_x, screen_y)
     else:
         locator.click(force=True, timeout=3000)
 
 def human_type(page, locator, text):
-    """Glides mouse to the input, clicks, and types with realistic human cadence."""
+    """Glides the physical Windows cursor to the input, clicks, and types."""
+    import pyautogui
     human_click(page, locator)
     time.sleep(0.2)
-    locator.type(text, delay=45)
+    pyautogui.write(text, interval=0.04)
+
 
 
 # ==============================================================================
@@ -293,11 +317,13 @@ with sync_playwright() as p:
 ---
 
 ## 📋 Rules for Any AI Agent Running this Engine
-1. **Never guess blind coordinates:** Always use Playwright locators (`page.locator(...)`, `text=...`, CSS selectors, or accessibility roles).
-2. **Never hide the browser:** Always use `WinSta0\Default` and `SW_SHOWMAXIMIZED` so the user watches every action in real time.
-3. **Use `force=True` on tricky clicks:** If a link or button is partially obstructed by a popup, use `locator.click(force=True, timeout=3000)`.
-4. **Prevent Console Unicode Errors:** On Windows `cp1252`, avoid printing complex emojis directly to `print()`; use standard ASCII status tags like `[SUCCESS]`, `[INFO]`, or `[ERROR]`.
-5. **Keep user control intact:** The browser runs visibly in front of the user without locking their physical mouse cursor, allowing the user to inspect and take over at any moment.
+1. **NEVER FAKE WITH CURL / CLI:** If the user gives a browser task, you are STRICTLY FORBIDDEN from abandoning the browser and running `curl.exe`, `Invoke-WebRequest`, or CLI scrapers in PowerShell while pretending in chat that you used Chrome. You MUST use the visible Chrome browser.
+2. **NEVER FAKE TASK COMPLETION (VERIFY OUTCOME ON DISK):** You are STRICTLY FORBIDDEN from telling the user "Done" or "Task Complete" until you run an actual physical file check (e.g. `os.path.getsize(path) > 0`). If the file is not physically on disk with non-zero bytes, THE TASK IS NOT COMPLETE.
+3. **USE PHYSICAL MOUSE GLIDES:** Always use `human_click(page, locator)` so the user actually sees the physical Windows mouse arrow move to the target on screen.
+4. **Never guess blind coordinates:** Always use semantic Playwright locators (`page.locator(...)`, `text=...`, CSS selectors, or accessibility roles).
+5. **Never hide the browser:** Always use `WinSta0\Default` and `SW_SHOWMAXIMIZED` so the user watches every action in real time.
+6. **Use `force=True` on tricky clicks:** If a link or button is partially obstructed by a popup, use `locator.click(force=True, timeout=3000)`.
+7. **Prevent Console Unicode Errors:** On Windows `cp1252`, avoid printing complex emojis directly to `print()`; use standard ASCII status tags like `[SUCCESS]`, `[INFO]`, or `[ERROR]`.
 
 ---
 
